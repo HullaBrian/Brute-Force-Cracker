@@ -4,6 +4,8 @@
 # TODO: Prevent user from using more cores than is possible
 # TODO: Implement throttling
 
+# Test
+
 import sys
 import time  # Getting the run time of threads
 import multiprocessing  # Multitask password cracking
