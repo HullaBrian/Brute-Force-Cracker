@@ -13,10 +13,11 @@ from multiprocessing import Queue
 
 # Defining needed variables
 max_size = 7  # Sets maximum size the cracker will go to before quitting
-worker_threads = 4  # Number of threads/cores working at the same time. Increasing this increases cpu usage
+worker_threads = 2  # Number of threads/cores working at the same time. Increasing this increases cpu usage
 length = 2  # Initial password length to check (Default: 2 characters)
 length_buffer = 0
 attempts = []  # Array full of Processes
+thread_queue = Queue()
 password = "jbe"  # Password to check against
 run = True  # Main loop variable
 
@@ -35,8 +36,11 @@ class Checker(Thread):
         while True:
             for attempt in attempts:
                 if not attempt.is_alive():
+                    attempts.append(thread_queue.get())
                     attempts.remove(attempt)
+
                     # print("Thread killed with id: ", attempt.name)
+            # time.sleep(0.1)
 
 
 class iterator(object):  # Iterator object that controls the logic of each character within the attempt
@@ -153,7 +157,7 @@ class Controller(object):
             print("[MAIN]: Started thread")
 
     def mainLoop(self):
-        global run, attempts, length
+        global run, attempts, length, thread_queue
 
         print("Populating thread queue...", end="")
         thread_queue = Queue()
@@ -165,21 +169,10 @@ class Controller(object):
 
         self.checkThreads()
         self.startChecker()
+        self.populateAttempts()
+        self.startAttempts()
 
         print("[MAIN]: Brute forcing password..")
-
-        while run:
-            self.populateAttempts()
-            self.startAttempts()
-
-            if length + 1 <= max_size:  # Makes sure the length does not exceed maximum length
-                length += 1
-            else:
-                print("[MAIN/WARNING]Maximum crack length reached. Stopping all processes...", end="")
-                run = False
-                print("Done!")
-
-            attempts.clear()  # Clears attempts to allow for new password lengths
 
 
 if __name__ == "__main__":
