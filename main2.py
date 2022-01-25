@@ -7,7 +7,6 @@
 import sys
 import time  # Getting the run time of threads
 import multiprocessing  # Multitask password cracking
-from threading import Thread
 from multiprocessing import Queue
 
 
@@ -15,11 +14,11 @@ from multiprocessing import Queue
 max_size = 7  # Sets maximum size the cracker will go to before quitting
 worker_threads = 2  # Number of threads/cores working at the same time. Increasing this increases cpu usage
 length = 2  # Initial password length to check (Default: 2 characters)
-length_buffer = 0
-attempts = []  # Array full of Processes
+current_processes = []  # Array full of Processes
 thread_queue = Queue()
-password = "jbe"  # Password to check against
+password = "jbee"  # Password to check against
 run = True  # Main loop variable
+data_pipe = Queue()
 
 chars = \
     [  # List of characters used in combinations. Decreasing the size of this will catch fewer passwords, but run faster
@@ -28,19 +27,6 @@ chars = \
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
     ')', '!', '@', '#', '$', '%', '^', '&', '*', '('
     ]
-
-
-class Checker(Thread):
-    def run(self):
-        global attempts
-        while True:
-            for attempt in attempts:
-                if not attempt.is_alive():
-                    attempts.append(thread_queue.get())
-                    attempts.remove(attempt)
-
-                    # print("Thread killed with id: ", attempt.name)
-            # time.sleep(0.1)
 
 
 class iterator(object):  # Iterator object that controls the logic of each character within the attempt
@@ -88,19 +74,19 @@ def getTime(startTime, endTime):  # Generates the time taken from a start and en
 
 
 class attempt(object):  # Main object that
-    def __init__(self, id=-1, length=0, run=True):
+    def __init__(self, id=-1, length=0):
         self.id = id  # Thread id
         self.length = length
         self.workers = []
         for _ in range(0, length):  # Populates worker list with iterators with a size equal to the length param
             self.workers.append(iterator(_))
 
-        self.run = run  # Main control flag
+        self.run = True  # Main control flag
 
         self.startTime = 0
         self.endTime = 0
 
-    def start(self, run):  # Main method that loops through and iterates the iterators in the workers list
+    def start(self, run, data_pipe):  # Main method that loops through and iterates the iterators in the workers list
         self.startTime = time.time()
         self.run = run
         while concatenateDigits(self.workers) != password and self.run:  # While loop that controls the iterations
@@ -118,9 +104,11 @@ class attempt(object):  # Main object that
         if concatenateDigits(self.workers) == password and self.run:  # Makes sure that the password has been found
             self.run = False
             print("[Thread " + str(self.id) + "]: Found password \"" + concatenateDigits(self.workers) + "\" in", getTime(self.startTime, self.endTime))
+            data_pipe.put([self.id, True])
             sys.exit()
         else:
             print("[Thread " + str(self.id) + "]: Failed length " + str(self.length))
+            data_pipe.put([int(self.id), False])
             sys.exit()
 
 
@@ -133,46 +121,71 @@ class Controller(object):
             worker_threads = worker_threads - max_size
             print("Done!\n[MAIN]: Thread count now", worker_threads)
 
-    def startChecker(self):
-        checkThread = Checker()
-        checkThread.start()
-
-    def populateAttempts(self):
-        global length_buffer, attempts
-
-        for x in range(0, worker_threads):  # Populate workers
-            atmpt = attempt(x, length + length_buffer, run)
-            print("[MAIN]: Created thread with id: " + str(length + length_buffer))
-            attempts.append(multiprocessing.Process(name=str(x), target=atmpt.start, args=(run,), daemon=True))
-            length_buffer += 1
-
-        length_buffer -= 1
-
     def startAttempts(self):
-        global attempts
+        global current_processes
 
         print("[MAIN]: Starting threads...")
-        for process in attempts:  # Begin worker processes
+        for process in current_processes:  # Begin worker processes
             process.start()
             print("[MAIN]: Started thread")
 
-    def mainLoop(self):
-        global run, attempts, length, thread_queue
+    def killIdleThreads(self):
+        global current_processes
 
-        print("Populating thread queue...", end="")
-        thread_queue = Queue()
-        for x in range(0, max_size):
-            atmpt = attempt(x, length, run)
-            thread_queue.put(multiprocessing.Process(name=str(x), target=atmpt.start, args=(run,), daemon=True))
+        for x in range(0, data_pipe.qsize()):
+            process_code = data_pipe.get()
+            if process_code[1]:
+                exit()
+            else:
+                for process in current_processes:
+                    if process.name == str(process_code[0]):
+                        process.terminate()
+                        current_processes.remove(process)
+
+    def mainLoop(self):
+        global run, current_processes, length, thread_queue, data_pipe
+
+        print("[MAIN]: Populating thread queue...", end="")
+        thread_queue = []
+        current_processes = []
+        data_pipe = Queue()
+
+        for x in range(length, max_size):
+            atmpt = attempt(x, length)
+            thread_queue.append(multiprocessing.Process(name=str(x), target=atmpt.start, args=(run, data_pipe), daemon=True))
+            print(length)
             length += 1
         print("Done!")
 
-        self.checkThreads()
-        self.startChecker()
-        self.populateAttempts()
-        self.startAttempts()
+        print("Queue: ")
+        for process in thread_queue:
+            print("\t" + process.name)
 
-        print("[MAIN]: Brute forcing password..")
+        print("[MAIN]: Queuing initial threads...", end="")
+        for x in range(0, worker_threads):
+            current_processes.append(thread_queue[0])
+            thread_queue.remove(thread_queue[0])
+            current_processes[-1].start()
+        print("Done!")
+
+        print("[MAIN]: Brute forcing password...")
+        while len(thread_queue) > 0:
+            processes1 = len(current_processes)
+            self.killIdleThreads()
+            processes2 = len(current_processes)
+
+            if processes1 > processes2:
+                for x in range(0, processes1 - processes2):
+                    print("[MAIN]: Started thread for length " + str(thread_queue[0].name))
+
+                    try:
+                        current_processes.append(thread_queue[0])
+                        thread_queue = thread_queue[1:]
+                    except IndexError:
+                        for process in current_processes:
+                            process.join()
+                    current_processes[-1].start()
+        exit()
 
 
 if __name__ == "__main__":
