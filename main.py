@@ -181,8 +181,6 @@ class Controller(object):
                         exit()
                     current_processes[-1].start()
 
-        print(current_processes)
-        print(thread_queue)
         exit()
 
 
