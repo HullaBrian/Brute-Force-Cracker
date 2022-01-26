@@ -1,24 +1,18 @@
-# TODO: Make program stop completely after finishing password cracking
-# TODO: Once thread stops execution, make it start on new length to prevent thread downtime
-# TODO: Look at https://docs.python.org/3/library/multiprocessing.shared_memory.html
-# TODO: Prevent user from using more cores than is possible
 # TODO: Implement throttling
 
-import sys
 import time  # Getting the run time of threads
 import multiprocessing  # Multitask password cracking
 from multiprocessing import Queue
 
 
 # Defining needed variables
+password = "jbeee"  # Password to check against
 max_size = 7  # Sets maximum size the cracker will go to before quitting
-worker_threads = 2  # Number of threads/cores working at the same time. Increasing this increases cpu usage
-length = 2  # Initial password length to check (Default: 2 characters)
+worker_threads = 3  # Number of threads/cores working at the same time. Increasing this increases cpu usage
+length = 3  # Initial password length to check (Default: 2 characters)
 current_processes = []  # Array full of Processes
-thread_queue = Queue()
-password = "jbee"  # Password to check against
-run = True  # Main loop variable
-data_pipe = Queue()
+thread_queue = Queue()  # Queue containing all threads in a queue
+data_pipe = Queue()  # Data pipe
 
 chars = \
     [  # List of characters used in combinations. Decreasing the size of this will catch fewer passwords, but run faster
@@ -78,6 +72,7 @@ class attempt(object):  # Main object that
         self.id = id  # Thread id
         self.length = length
         self.workers = []
+
         for _ in range(0, length):  # Populates worker list with iterators with a size equal to the length param
             self.workers.append(iterator(_))
 
@@ -86,9 +81,9 @@ class attempt(object):  # Main object that
         self.startTime = 0
         self.endTime = 0
 
-    def start(self, run, data_pipe):  # Main method that loops through and iterates the iterators in the workers list
+    def start(self, data_pipe):  # Main method that loops through and iterates the iterators in the workers list
         self.startTime = time.time()
-        self.run = run
+
         while concatenateDigits(self.workers) != password and self.run:  # While loop that controls the iterations
             self.workers[-1].nextIteration(step=1, workers=self.workers)  # Iterates last iterator
 
@@ -105,11 +100,11 @@ class attempt(object):  # Main object that
             self.run = False
             print("[Thread " + str(self.id) + "]: Found password \"" + concatenateDigits(self.workers) + "\" in", getTime(self.startTime, self.endTime))
             data_pipe.put([self.id, True])
-            sys.exit()
+            exit()
         else:
             print("[Thread " + str(self.id) + "]: Failed length " + str(self.length))
             data_pipe.put([int(self.id), False])
-            sys.exit()
+            exit()
 
 
 class Controller(object):
@@ -132,18 +127,28 @@ class Controller(object):
     def killIdleThreads(self):
         global current_processes
 
-        for x in range(0, data_pipe.qsize()):
-            process_code = data_pipe.get()
-            if process_code[1]:
-                exit()
-            else:
-                for process in current_processes:
-                    if process.name == str(process_code[0]):
-                        process.terminate()
-                        current_processes.remove(process)
+        try:
+            for x in range(0, data_pipe.qsize()):
+                process_code = data_pipe.get()
+                if process_code[1]:
+                    print("[MAIN]: Exiting...")
+                    exit()
+                else:
+                    for process in current_processes:
+                        if process.name == str(process_code[0]):
+                            process.terminate()
+                            current_processes.remove(process)
+
+        except KeyboardInterrupt:
+            print("[Main]: Exiting...")
+            exit()
 
     def mainLoop(self):
         global run, current_processes, length, thread_queue, data_pipe
+
+        if multiprocessing.cpu_count() > worker_threads:
+            print("[MAIN]: Maximum core count exceeded. Exiting...")
+            exit()
 
         print("[MAIN]: Populating thread queue...", end="")
         thread_queue = []
@@ -152,7 +157,7 @@ class Controller(object):
 
         for x in range(length, max_size):
             atmpt = attempt(x, length)
-            thread_queue.append(multiprocessing.Process(name=str(x), target=atmpt.start, args=(run, data_pipe), daemon=True))
+            thread_queue.append(multiprocessing.Process(name=str(x), target=atmpt.start, args=(data_pipe,), daemon=True))
             length += 1
         print("Done!")
 
@@ -175,12 +180,14 @@ class Controller(object):
                         print("[MAIN]: Started thread for length " + str(thread_queue[0].name))
                         current_processes.append(thread_queue[0])
                         thread_queue = thread_queue[1:]
+                        current_processes[-1].start()
                     except IndexError:
                         for process in current_processes:
                             process.join()
+                        print("[MAIN]: Exiting...")
                         exit()
-                    current_processes[-1].start()
 
+        print("[MAIN]: Exiting...")
         exit()
 
 
