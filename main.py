@@ -11,7 +11,7 @@ max_size = 7  # Sets maximum size the cracker will go to before quitting
 worker_threads = 3  # Number of threads/cores working at the same time. Increasing this increases cpu usage
 length = 3  # Initial password length to check (Default: 2 characters)
 current_processes = []  # Array full of Processes
-thread_queue = Queue()  # Queue containing all threads in a queue
+thread_queue = []  # Queue containing all threads in a queue
 data_pipe = Queue()  # Data pipe
 
 chars = \
@@ -99,61 +99,53 @@ class attempt(object):  # Main object that
         if concatenateDigits(self.workers) == password and self.run:  # Makes sure that the password has been found
             self.run = False
             print("[Thread " + str(self.id) + "]: Found password \"" + concatenateDigits(self.workers) + "\" in", getTime(self.startTime, self.endTime))
-            data_pipe.put([self.id, True])
+            data_pipe.put([self.id, True])  # Puts the attempt id and True(indicates the password was found)
             exit()
         else:
             print("[Thread " + str(self.id) + "]: Failed length " + str(self.length))
-            data_pipe.put([int(self.id), False])
+            data_pipe.put([int(self.id), False])  # Puts the attempt id and False(indicates the password WASN'T found)
             exit()
 
 
-class Controller(object):
-    def checkThreads(self):
+class Controller(object):  # Controller object that contains the method necessary to run the main loop
+    def checkThreads(self):  # Makes sure that the number of workers in not greater than the maximum password length
         global worker_threads
 
         if worker_threads > max_size:  # Makes sure that number of threads does not exceed the max size.
             print("[MAIN]: Number of threads exceeds max size. Setting threads to max...", end="")
-            worker_threads = worker_threads - max_size
+            worker_threads = worker_threads - max_size  # Configures the number workers to reasonable number
             print("Done!\n[MAIN]: Thread count now", worker_threads)
 
-    def startAttempts(self):
-        global current_processes
-
-        print("[MAIN]: Starting threads...")
-        for process in current_processes:  # Begin worker processes
-            process.start()
-            print("[MAIN]: Started thread")
-
-    def killIdleThreads(self):
+    def killIdleThreads(self):  # Kills all idle threads that have finished
         global current_processes
 
         try:
-            for x in range(0, data_pipe.qsize()):
-                process_code = data_pipe.get()
-                if process_code[1]:
+            for x in range(0, data_pipe.qsize()):  # Cannot iterate through the values of a multiprocess.Queue(), so a range is used
+                process_code = data_pipe.get()  # Gets the data from each attempt's finish
+                if process_code[1]:  # If the password was found
                     print("[MAIN]: Exiting...")
                     exit()
                 else:
                     for process in current_processes:
-                        if process.name == str(process_code[0]):
+                        if process.name == str(process_code[0]):  # Finds the process who's id matches the process that is idle
                             process.terminate()
                             current_processes.remove(process)
 
-        except KeyboardInterrupt:
+        except KeyboardInterrupt:  # Adds a "safety net" that prevents a big error message if the user forcefully exits
             print("[Main]: Exiting...")
             exit()
 
     def mainLoop(self):
         global run, current_processes, length, thread_queue, data_pipe
 
-        if multiprocessing.cpu_count() > worker_threads:
+        if multiprocessing.cpu_count() > worker_threads:  # Makes sure user doesn't set core count higher than what is possible
             print("[MAIN]: Maximum core count exceeded. Exiting...")
             exit()
 
         print("[MAIN]: Populating thread queue...", end="")
-        thread_queue = []
-        current_processes = []
-        data_pipe = Queue()
+        thread_queue = []  # Queue for upcoming processes
+        current_processes = []  # Contains all processes
+        data_pipe = Queue()  # One way pipe that feeds data from the attempt objects to the main loop
 
         for x in range(length, max_size):
             atmpt = attempt(x, length)
@@ -162,28 +154,28 @@ class Controller(object):
         print("Done!")
 
         print("[MAIN]: Queuing initial threads...", end="")
-        for x in range(0, worker_threads):
+        for x in range(0, worker_threads):  # Puts first processes in current_processes and starts them
             current_processes.append(thread_queue[0])
             thread_queue.remove(thread_queue[0])
             current_processes[-1].start()
         print("Done!")
 
         print(f"[MAIN]: Brute forcing password with {worker_threads} cores...")
-        while len(current_processes) > 0:
+        while len(current_processes) > 0:  # Main loop that continuously starts processes if a process dies
             processes1 = len(current_processes)
             self.killIdleThreads()
             processes2 = len(current_processes)
 
-            if processes1 > processes2:
+            if processes1 > processes2:  # If the number of processes changed after killing idle threads
                 for x in range(0, processes1 - processes2):
                     try:
                         print("[MAIN]: Started thread for length " + str(thread_queue[0].name))
-                        current_processes.append(thread_queue[0])
-                        thread_queue = thread_queue[1:]
-                        current_processes[-1].start()
+                        current_processes.append(thread_queue[0])  # Add beginning of thread_queue to current processes
+                        thread_queue = thread_queue[1:]  # Remove first thread from thread_queue
+                        current_processes[-1].start()  # Starts the new thread
                     except IndexError:
-                        for process in current_processes:
-                            process.join()
+                        for process in current_processes:  # For catching when the queue's run out of threads
+                            process.join()  # Waits for all threads to finish, then stops
                         print("[MAIN]: Exiting...")
                         exit()
 
@@ -193,4 +185,4 @@ class Controller(object):
 
 if __name__ == "__main__":
     controller = Controller()
-    controller.mainLoop()
+    controller.mainLoop()  # Starts the main loop for the cracking process to begin
