@@ -1,9 +1,9 @@
 # TODO: Implement throttling
 
-import sys
+import sys  # Used to exit threads
 import time  # Getting the run time of threads
 import multiprocessing  # Multitask password cracking
-from multiprocessing import Queue
+from multiprocessing import Queue  # Used for a thread queue as well as a data pipe between processes and main loop
 
 
 # Defining needed variables
@@ -90,10 +90,7 @@ class attempt(object):  # Main object that
 
             if self.workers[0].reset:  # If the first iterator resets
                 self.workers[0].reset = False
-                if len(self.workers) + 1 <= self.length:
-                    self.workers.append(iterator(len(self.workers)))
-                else:
-                    break
+                break
 
         self.endTime = time.time()
 
@@ -138,12 +135,6 @@ class Controller(object):  # Controller object that contains the method necessar
 
     def mainLoop(self):
         global run, current_processes, length, thread_queue, data_pipe
-
-        """
-        if multiprocessing.cpu_count() > worker_threads:  # Makes sure user doesn't set core count higher than what is possible
-            print("[MAIN]: Maximum core count exceeded. Exiting...")
-            exit()
-        """
 
         print("[MAIN]: Populating thread queue...", end="")
         thread_queue = []  # Queue for upcoming processes
